@@ -136,7 +136,7 @@ class ColmapAsciiReader():
                 elems = fid.readline().split()
                 assert len(elems) == 10
                 line = fid.readline()
-                image_path = os.path.join(images_dir, elems[9])
+                image_path = os.path.join(images_dir, elems[9] if 'images' not in elems[9] else os.path.basename(elems[9]))
                 assert os.path.isfile(image_path), f'missing file: {image_path}'
                 image_id = int(elems[0])
                 qw, qx, qy, qz, tx, ty, tz = list(map(float, elems[1:8]))

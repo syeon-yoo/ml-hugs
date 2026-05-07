@@ -53,7 +53,9 @@ def main(cfg):
             logger.warning('No human ckpt found')
             
     latest_scene_ckpt = None
-    scene_ckpt_files = sorted(glob.glob(cfg.logdir_ckpt + '/*scene*.pth'))
+    scene_ckpt_files = glob.glob(cfg.logdir_ckpt + '/*scene*.pth')
+    scene_ckpt_files += glob.glob(cfg.logdir_ckpt + '/ckpt/*scene*.pth')
+    scene_ckpt_files = sorted(scene_ckpt_files)
     if len(scene_ckpt_files) > 0:
         latest_scene_ckpt = scene_ckpt_files[-1]
         logger.info(f'Found scene ckpt: {latest_scene_ckpt}')
@@ -81,6 +83,7 @@ def main(cfg):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_dir", default=None, help="path to the output directory")
+    parser.add_argument("--custom_dataset_dir", default=None, help="path to the custom dataset directory for anim camera pose")
     
     args, extras = parser.parse_known_args()
         
@@ -90,6 +93,7 @@ if __name__=='__main__':
     
     cfg = OmegaConf.merge(default_cfg, cfg_file, OmegaConf.from_cli(extras))
     cfg.eval = True
+    cfg.custom_dataset_dir = args.custom_dataset_dir
     
     if args.output_dir is not None:
         cfg.logdir = args.output_dir

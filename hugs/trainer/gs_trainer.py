@@ -60,7 +60,11 @@ def get_val_dataset(cfg):
 def get_anim_dataset(cfg):
     if cfg.dataset.name == 'neuman':
         logger.info(f'Loading NeuMan dataset {cfg.dataset.seq}-anim')
-        dataset = NeumanDataset(cfg.dataset.seq, 'anim', cfg.mode)
+        dataset = NeumanDataset(cfg.dataset.seq, 'anim', cfg.mode, 
+                                custom_dataset_dir=cfg.custom_dataset_dir if hasattr(cfg, 'custom_dataset_dir') else None,
+                                custom_mocap_path=cfg.custom_mocap_path if hasattr(cfg, 'custom_mocap_path') else None,
+                                custom_cameras=cfg.custom_cameras if hasattr(cfg, 'custom_cameras') else None,
+        )
     elif cfg.dataset.name == 'zju':
         dataset = None
         

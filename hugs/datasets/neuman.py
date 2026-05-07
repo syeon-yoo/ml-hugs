@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from .neuman_utils import neuman_helper
 from .neuman_utils.geometry import transformations
 from .neuman_utils.cameras.camera_pose import CameraPose
+from .neuman_utils.cameras.pinhole_camera import PinholeCamera
 from .neuman_utils.geometry.basics import Translation, Rotation
 from hugs.cfg.constants import AMASS_SMPLH_TO_SMPL_JOINTS, NEUMAN_PATH
 from hugs.utils.graphics import get_projection_matrix, BasicPointCloud
@@ -92,9 +93,12 @@ def alignment(scene_name, motion_name=None):
         manual_rot = np.array([90.4, -4.2, -1]) / 180 * np.pi
         manual_scale = 1.8
     elif os.path.basename(scene_name) == 'citron':
-        manual_trans = np.array([6.33, 1.7, 10.7])
-        manual_rot = np.array([72.4, 168.2, -4.4]) / 180 * np.pi
-        manual_scale = 2.5
+        # manual_trans = np.array([6.33, 1.7, 10.7])
+        # manual_rot = np.array([72.4, 168.2, -4.4]) / 180 * np.pi
+        # manual_scale = 2.5
+        manual_trans = np.array([0.0, 0.0, 0.0])
+        manual_rot = np.array([0.0, 0.0, 0.0])
+        manual_scale = 1.0
     elif os.path.basename(scene_name) == 'parkinglot':
         manual_trans = np.array([-0.8, 2.35, 12.67])
         manual_rot = np.array([94, -85, -363]) / 180 * np.pi
@@ -132,12 +136,14 @@ def rendering_caps(scene_name, nframes, scene):
     elif os.path.basename(scene_name) == 'citron':
         dummy_caps = []
         for i in range(nframes):
-            temp = copy.deepcopy(scene.captures[33])
+            # temp = copy.deepcopy(scene.captures[33])
+            temp = copy.deepcopy(scene.captures[543])   # 303_outside
             ellipse_a = 0.15 * 3
             ellipse_b = 0.03 * 3 
-            x_offset= temp.cam_pose.right * (ellipse_a * np.cos(2 * i/nframes * 2 * np.pi) + 0.2)
-            y_offset= temp.cam_pose.up * ellipse_b * np.sin(2 * i/nframes * 2 * np.pi)
+            x_offset= temp.cam_pose.right * (ellipse_a * np.sin(2 * i/nframes * 2 * np.pi)-0.0)
+            y_offset= temp.cam_pose.up * ellipse_b * np.cos(2 * i/nframes * 2 * np.pi)
             temp.cam_pose.camera_center_in_world = temp.cam_pose.camera_center_in_world + x_offset + y_offset
+            temp.cam_pose.camera_center_in_world -= temp.cam_pose.forward * 1.0    
             dummy_caps.append(temp)
     elif os.path.basename(scene_name) == 'parkinglot':
         dummy_caps = []
@@ -188,8 +194,14 @@ class NeumanDataset(torch.utils.data.Dataset):
         num_bg_points=204_800,
         bg_sphere_dist=5.0,
         clean_pcd=False,
+        custom_dataset_dir=None,
+        custom_mocap_path=None,
+        custom_cameras=None,
     ):
-        dataset_path = f"{NEUMAN_PATH}/{seq}"
+        if split == 'anim' and custom_dataset_dir is not None:
+            dataset_path = custom_dataset_dir
+        else:
+            dataset_path = f"{NEUMAN_PATH}/{seq}"
         scene = neuman_helper.NeuManReader.read_scene(
             dataset_path,
             tgt_size=None,
@@ -197,31 +209,60 @@ class NeumanDataset(torch.utils.data.Dataset):
             smpl_type='optimized'
         )
         
+        if split == 'anim' and custom_dataset_dir is not None:
+            dataset_path = f"{NEUMAN_PATH}/{seq}"
         smpl_params_path = f'{dataset_path}/4d_humans/smpl_optimized_aligned_scale.npz'        
         smpl_params = np.load(smpl_params_path)
         smpl_params = {f: smpl_params[f] for f in smpl_params.files}
         
         if split == 'anim':
-            motion_path, start_idx, end_idx, skip = mocap_path(seq)
-            motions = np.load(motion_path)
-            poses = motions['poses'][start_idx:end_idx:skip, AMASS_SMPLH_TO_SMPL_JOINTS]
-            transl = motions['trans'][start_idx:end_idx:skip]
-            betas = smpl_params['betas'][0]
-            smpl_params = {
-                'global_orient': poses[:, :3],
-                'body_pose': poses[:, 3:],
-                'transl': transl,
-                'scale': np.array([1.0] * poses.shape[0]),
-                'betas': betas[None].repeat(poses.shape[0], 0)[:, :10],
-            }
+            if custom_mocap_path is not None:
+                motion_path = custom_mocap_path['motion_path']
+                start_idx = custom_mocap_path['start_idx']
+                end_idx = custom_mocap_path['end_idx']
+                skip = custom_mocap_path['skip']
+            else:
+                motion_path, start_idx, end_idx, skip = mocap_path(seq)
+            if os.path.splitext(motion_path)[1] == '.npy':  # motion file from PriorMDM
+                motions = np.load(motion_path, allow_pickle=True)[None][0]
+                global_orient = motions['global_orient'][start_idx:end_idx:skip]
+                body_pose = motions['body_pose'][start_idx:end_idx:skip]
+                transl = motions['transl'][start_idx:end_idx:skip]
+                betas = smpl_params['betas'][0]
+                smpl_params = {
+                    'global_orient': global_orient,
+                    'body_pose': body_pose,
+                    'transl': transl,
+                    'scale': np.array([1.0] * global_orient.shape[0]),
+                    'betas': betas[None].repeat(global_orient.shape[0], 0)[:, :10],
+                }
+                nframes = global_orient.shape[0]
+            else:   # HUGS default setting
+                motions = np.load(motion_path)
+                poses = motions['poses'][start_idx:end_idx:skip, AMASS_SMPLH_TO_SMPL_JOINTS]
+                transl = motions['trans'][start_idx:end_idx:skip]
+                betas = smpl_params['betas'][0]
+                smpl_params = {
+                    'global_orient': poses[:, :3],
+                    'body_pose': poses[:, 3:],
+                    'transl': transl,
+                    'scale': np.array([1.0] * poses.shape[0]),
+                    'betas': betas[None].repeat(poses.shape[0], 0)[:, :10],
+                }
+                nframes = poses.shape[0]
             
-            manual_trans, manual_rot, manual_scale = alignment(seq)
+            if custom_dataset_dir is not None:  # For the case of animating in the custom scene (ReaDy-Go)
+                manual_trans = np.array([0.0, 0.0, 0.0])
+                manual_rot = np.array([0.0, 0.0, 0.0])
+                manual_scale = 1.0
+            else:
+                manual_trans, manual_rot, manual_scale = alignment(seq)
             manual_rotmat = transformations.euler_matrix(*manual_rot)[:3, :3]
             self.manual_rotmat = torch.from_numpy(manual_rotmat).float().unsqueeze(0)
             self.manual_trans = torch.from_numpy(manual_trans).float().unsqueeze(0)
             self.manual_scale = torch.tensor([manual_scale]).float().unsqueeze(0)
-            nframes = poses.shape[0]
             caps = rendering_caps(seq, nframes, scene)
+            self.colmap_caps = scene.captures
             scene.captures = caps
         else:
             self.train_split, _, self.val_split = get_data_splits(scene)
@@ -294,6 +335,9 @@ class NeumanDataset(torch.utils.data.Dataset):
         self.mode = render_mode
         
         self.num_frames = len(self.scene.captures)    
+        
+        if custom_cameras is not None:
+            self._apply_custom_cameras(self.scene.captures, custom_cameras)
 
         self.cached_data = None
         if self.cached_data is None:
@@ -362,6 +406,9 @@ class NeumanDataset(torch.utils.data.Dataset):
         camera_center = world_view_transform.inverse()[3, :3]
         cam_intrinsics = torch.from_numpy(cap.intrinsic_matrix).float()
         
+        if idx >= self.smpl_params['betas'].shape[0]:
+            idx = self.smpl_params['betas'].shape[0] - 1
+        
         datum.update({
             "fovx": fovx,
             "fovy": fovy,
@@ -405,3 +452,165 @@ class NeumanDataset(torch.utils.data.Dataset):
             return self.get_single_item(idx, is_src=True)
         else:
             return self.cached_data[idx]
+    
+    def only_reinitialize_smpl_params(self, custom_mocap_path, custom_cameras=None):
+        if self.split != 'anim':
+            raise ValueError('only_reinitialize_smpl_params is only for anim split')
+        
+        motion_path = custom_mocap_path['motion_path']
+        start_idx = custom_mocap_path['start_idx']
+        end_idx = custom_mocap_path['end_idx']
+        skip = custom_mocap_path['skip']
+        
+        if os.path.splitext(motion_path)[1] == '.npy':  # motion file from PriorMDM
+            motions = np.load(motion_path, allow_pickle=True)[None][0]
+            global_orient = motions['global_orient'][start_idx:end_idx:skip]
+            body_pose = motions['body_pose'][start_idx:end_idx:skip]
+            transl = motions['transl'][start_idx:end_idx:skip]
+            betas = self.smpl_params['betas'][0].numpy()
+            smpl_params = {
+                'global_orient': global_orient,
+                'body_pose': body_pose,
+                'transl': transl,
+                'scale': np.array([1.0] * global_orient.shape[0]),
+                'betas': betas[None].repeat(global_orient.shape[0], 0)[:, :10],
+            }
+            nframes = global_orient.shape[0]
+        else:   # HUGS default setting
+            motions = np.load(motion_path)
+            poses = motions['poses'][start_idx:end_idx:skip, AMASS_SMPLH_TO_SMPL_JOINTS]
+            transl = motions['transl'][start_idx:end_idx:skip]
+            betas = self.smpl_params['betas'][0]
+            smpl_params = {
+                'global_orient': poses[:, :3],
+                'body_pose': poses[:, 3:],
+                'transl': transl,
+                'scale': np.array([1.0] * poses.shape[0]),
+                'betas': betas[None].repeat(poses.shape[0], 0)[:, :10],
+            }
+            nframes = poses.shape[0]
+        
+        self.smpl_params = {}
+        for k in smpl_params.keys():
+            self.smpl_params[k] = torch.from_numpy(smpl_params[k]).float()
+        
+        if custom_cameras is not None:
+            self._apply_custom_cameras(self.scene.captures, custom_cameras)
+        
+        self.cached_data = None
+        if self.cached_data is None:
+            self.load_data_to_cuda()
+        
+        
+    def _apply_custom_cameras(self, captures, overrides):
+        template = copy.deepcopy(captures[0])
+        captures[:] = [copy.deepcopy(template) for _ in range(len(overrides))]
+        for cap, cam in zip(captures, overrides):
+            if cam["intrinsic_matrix"] is not None:
+                intrinsic = np.asarray(cam["intrinsic_matrix"], dtype=np.float32)
+                height, width = map(int, cam["size"])
+                cap.pinhole_cam = PinholeCamera.from_intrinsic(width, height, intrinsic)
+
+            if "world_to_camera" in cam:
+                world_to_camera = np.asarray(cam["world_to_camera"], dtype=np.float32)
+            elif "camera_to_world" in cam:
+                world_to_camera = np.linalg.inv(np.asarray(cam["camera_to_world"], dtype=np.float32))
+            else:
+                raise KeyError("custom camera override must provide 'world_to_camera' or 'camera_to_world'")
+            cap.cam_pose = CameraPose.from_world_to_camera(world_to_camera)
+
+        # change length of anim_dataset appropriately for new episode
+        self.num_frames = len(overrides)
+    
+    
+    def get_render(self, idx, custom_camera=None):
+        if custom_camera is not None:
+            try:
+                cap = copy.deepcopy(self.scene.captures[idx])
+            except:
+                cap = copy.deepcopy(self.scene.captures[0])
+            if custom_camera["intrinsic_matrix"] is not None:
+                intrinsic = np.asarray(custom_camera["intrinsic_matrix"], dtype=np.float32)
+                height, width = map(int, custom_camera["size"])
+                cap.pinhole_cam = PinholeCamera.from_intrinsic(width, height, intrinsic)
+            if "world_to_camera" in custom_camera:
+                world_to_camera = np.asarray(custom_camera["world_to_camera"], dtype=np.float32)
+            elif "camera_to_world" in custom_camera:
+                world_to_camera = np.linalg.inv(np.asarray(custom_camera["camera_to_world"], dtype=np.float32))
+            else:
+                raise KeyError("custom camera must provide 'world_to_camera' or 'camera_to_world'")
+            cap.cam_pose = CameraPose.from_world_to_camera(world_to_camera)
+        else:
+            cap = self.scene.captures[idx]
+        datum = {}
+        K = cap.intrinsic_matrix
+        width = cap.size[1]
+        height = cap.size[0]
+        
+        fovx = 2 * np.arctan(width / (2 * K[0, 0]))
+        fovy = 2 * np.arctan(height / (2 * K[1, 1]))
+        # zfar = max(cap.far['human'], cap.near['bkg']) + 1.0
+        # znear = min(cap.near['human'], cap.near['bkg'])
+        zfar = 100.0 # max(zfar, 100.0)
+        znear = 0.01 # min(znear, 0.01)
+        
+        world_view_transform = torch.from_numpy(cap.cam_pose.world_to_camera).T # torch.eye(4)
+        c2w = torch.from_numpy(cap.cam_pose.camera_to_world)
+        
+        projection_matrix = get_projection_matrix(znear=znear, zfar=zfar, fovX=fovx, fovY=fovy).transpose(0,1)
+        full_proj_transform = (world_view_transform.unsqueeze(0).bmm(projection_matrix.unsqueeze(0))).squeeze(0)
+        camera_center = world_view_transform.inverse()[3, :3]
+        cam_intrinsics = torch.from_numpy(cap.intrinsic_matrix).float()
+        
+        if idx >= self.smpl_params['betas'].shape[0]:
+            idx = self.smpl_params['betas'].shape[0] - 1
+        
+        datum.update({
+            "fovx": fovx,
+            "fovy": fovy,
+            "image_height": height,
+            "image_width": width,
+            "world_view_transform": world_view_transform,
+            "c2w": c2w,
+            "full_proj_transform": full_proj_transform,
+            "camera_center": camera_center,
+            "cam_intrinsics": cam_intrinsics,
+            
+            "betas": self.smpl_params["betas"][idx],
+            "global_orient": self.smpl_params["global_orient"][idx],
+            "body_pose": self.smpl_params["body_pose"][idx],
+            "transl": self.smpl_params["transl"][idx],
+            "smpl_scale": self.smpl_params["scale"][idx],
+            "near": znear,
+            "far": zfar,
+        })
+        
+        if self.split == 'anim':
+            datum.update({
+                "manual_rotmat": self.manual_rotmat,
+                "manual_scale": self.manual_scale,
+                "manual_trans": self.manual_trans,
+            })
+        
+        for k, v in datum.items():
+            if isinstance(v, torch.Tensor):
+                datum[k] = v.to("cuda")
+        
+        return datum
+    
+    
+    def preparing_3rd_person_view(self, frame_idx, nframes):
+        dummy_caps = []
+        for i in range(nframes):
+            temp = copy.deepcopy(self.colmap_caps[frame_idx])
+            ellipse_a = 0.15 * 3
+            ellipse_b = 0.03 * 3 
+            x_offset= temp.cam_pose.right * (ellipse_a * np.sin(2 * i/nframes * 2 * np.pi)-0.0)
+            y_offset= temp.cam_pose.up * ellipse_b * np.cos(2 * i/nframes * 2 * np.pi)
+            temp.cam_pose.camera_center_in_world = temp.cam_pose.camera_center_in_world + x_offset + y_offset # - 8 * temp.cam_pose.right
+            temp.cam_pose.camera_center_in_world -= temp.cam_pose.forward * 1.0
+            dummy_caps.append(temp)
+        self.scene.captures = dummy_caps
+        
+        # change length of anim_dataset appropriately for the episode length
+        self.num_frames = nframes

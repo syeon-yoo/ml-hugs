@@ -251,7 +251,8 @@ class NeuManReader():
         captures, point_cloud, num_views, num_cams = cls.read_captures(scene_dir, tgt_size, mask_dir=mask_dir, keypoints_dir=keypoints_dir, densepose_dir=densepose_dir)
         scene = scene_module.RigCameraScene(captures, num_views, num_cams)
         scene.point_cloud = point_cloud
-        update_near_far(scene, ['bkg'], bkg_range_scale)
+        if normalize:
+            update_near_far(scene, ['bkg'], bkg_range_scale)
 
         if normalize:
             fars = []
@@ -376,20 +377,20 @@ class NeuManReader():
                 mono_depth_path = raw_cap.image_path.replace('/images/', '/mono_depth/')
                 if not os.path.isfile(depth_path):
                     depth_path = raw_cap.image_path + 'dummy'
-                    print(f'can not find mvs depth for {os.path.basename(raw_cap.image_path)}')
+                    # print(f'can not find mvs depth for {os.path.basename(raw_cap.image_path)}')
                 if not os.path.isfile(mono_depth_path):
                     mono_depth_path = raw_cap.image_path + 'dummy'
-                    print(f'can not find mono depth for {os.path.basename(raw_cap.image_path)}')
+                    # print(f'can not find mono depth for {os.path.basename(raw_cap.image_path)}')
                 mask_path = os.path.join(scene_dir, mask_dir, os.path.basename(raw_cap.image_path) + '.npy')
                 if not os.path.isfile(mask_path):
                     mask_path = os.path.join(scene_dir, mask_dir, os.path.basename(raw_cap.image_path))
                 keypoints_path = os.path.join(scene_dir, keypoints_dir, os.path.basename(raw_cap.image_path) + '.npy')
                 if not os.path.isfile(keypoints_path):
-                    print(f'can not find keypoints for {os.path.basename(raw_cap.image_path)}')
+                    # print(f'can not find keypoints for {os.path.basename(raw_cap.image_path)}')
                     keypoints_path = None
                 densepose_path = os.path.join(scene_dir, densepose_dir, 'dp_' + os.path.basename(raw_cap.image_path) + '.npy')
                 if not os.path.isfile(densepose_path):
-                    print(f'can not find densepose for {os.path.basename(raw_cap.image_path)}')
+                    # print(f'can not find densepose for {os.path.basename(raw_cap.image_path)}')
                     densepose_path = None
                 if tgt_size is None:
                     temp = NeuManCapture(

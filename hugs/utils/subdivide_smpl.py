@@ -8,7 +8,7 @@ import trimesh
 import numpy as np 
 from trimesh import grouping 
 from trimesh.geometry import faces_to_edges  
-
+from hugs.cfg.constants import SMPL_PATH
 
 from hugs.models.modules.smpl_layer import SMPL
 
@@ -107,7 +107,7 @@ def _subdivide_smpl_model(smpl=None, smoothing=False):
         )        
         sub_vertices = sub_mesh.vertices
                        
-    new_smpl = SMPL("data/smpl")     
+    new_smpl = SMPL(SMPL_PATH)     
     new_smpl.lbs_weights = torch.from_numpy(attr["lbs_weights"]).float()
     posedirs = np.zeros((207, sub_vertices.shape[0] * 3)).astype(np.float32)
     shapedirs = attr["shapedirs"].reshape(-1, 3, 10)

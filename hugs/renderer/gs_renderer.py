@@ -8,10 +8,12 @@
 
 import math
 import torch
-from diff_gaussian_rasterization import (
-    GaussianRasterizationSettings, 
-    GaussianRasterizer
-)
+# from diff_gaussian_rasterization import (
+#     GaussianRasterizationSettings, 
+#     GaussianRasterizer
+# )
+# Use Vid2Sim extended rasterizer for rendering
+from diff_gauss import GaussianRasterizationSettings, GaussianRasterizer
 
 from hugs.utils.spherical_harmonics import SH2RGB
 from hugs.utils.rotations import quaternion_to_matrix
@@ -141,7 +143,16 @@ def render(means3D, feats, opacity, scales, rotations, data, scaling_modifier=1.
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
         
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii = rasterizer(
+    # rendered_image, radii = rasterizer(
+    #     means3D=means3D,
+    #     means2D=means2D,
+    #     shs=shs,
+    #     opacities=opacity,
+    #     scales=scales,
+    #     rotations=rotations,
+    #     colors_precomp=rgb,
+    # )
+    rendered_image, rendered_depth, rendered_norm, rendered_alpha, radii, extra, gs_w = rasterizer(
         means3D=means3D,
         means2D=means2D,
         shs=shs,
@@ -158,4 +169,7 @@ def render(means3D, feats, opacity, scales, rotations, data, scaling_modifier=1.
         "viewspace_points": screenspace_points,
         "visibility_filter" : radii > 0,
         "radii": radii,
+        "depth": rendered_depth,
+        "normals": rendered_norm,
+        "alpha": rendered_alpha,
     }

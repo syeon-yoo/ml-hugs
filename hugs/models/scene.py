@@ -85,6 +85,8 @@ class SceneGS:
         return save_dict
     
     def restore(self, state_dict, cfg):
+        if len(state_dict) == 2:
+            state_dict = state_dict[0]
         self.active_sh_degree = state_dict['active_sh_degree']
         self._xyz = state_dict['xyz']
         self._features_dc = state_dict['features_dc']
@@ -101,7 +103,24 @@ class SceneGS:
         self.setup_optimizer(cfg)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
-        self.optimizer.load_state_dict(opt_dict)
+        
+        import copy
+        ckpt_temp = copy.deepcopy(opt_dict)
+        # Remove knn_f in param_group
+        keep_groups = []
+        remove_param_ids = set()
+        for g in ckpt_temp["param_groups"]:
+            if g.get("name") == "knn_f":
+                # remember param_id
+                remove_param_ids.update(g["params"])
+            else:
+                keep_groups.append(g)
+        ckpt_temp["param_groups"] = keep_groups
+        # Also remove param_id in state dictionary
+        ckpt_temp["state"] = {pid: st for pid, st in ckpt_temp["state"].items()
+                        if pid not in remove_param_ids}
+        
+        self.optimizer.load_state_dict(ckpt_temp)
     
     def __repr__(self):
         repr_str = "SceneGS: \n"

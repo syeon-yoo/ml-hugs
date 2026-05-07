@@ -42,7 +42,7 @@ class CapturedContent(abc.ABC):
 
 class CapturedImage(CapturedContent):
     def __init__(self, image_path):
-        assert os.path.isfile(image_path), f'file does not exist: {image_path}'
+        # assert os.path.isfile(image_path), f'file does not exist: {image_path}'
         self._image = None
         self.image_path = image_path
 
